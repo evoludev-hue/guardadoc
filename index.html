@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>Pasta funcional</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  * { box-sizing: border-box; }
+  body { font-family: 'Space Grotesk', sans-serif; background: #f4f2ec; color: #1b2430; margin: 0; }
+  button { cursor: pointer; font-family: 'Space Grotesk', sans-serif; }
+  input, select, textarea { font-family: 'IBM Plex Mono', monospace; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
+  .btn-primary { padding: 9px 18px; border-radius: 6px; border: none; background: #0f6e56; color: #fff; font-weight: 600; font-size: 13px; }
+  .btn-primary:disabled { background: #8f9a86; }
+  .btn-outline { font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid #0f6e56; background: transparent; color: #0f6e56; }
+  .btn-danger { font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid #e24b4a; background: transparent; color: #a32d2d; }
+  .field { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5c0; font-size: 14px; background: #fdfcf9; color: #1b2430; }
+  .label { font-size: 12px; font-weight: 600; color: #5f6b57; margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.03em; }
+  .card { background: #fff; border: 1px solid #e2ded1; border-radius: 10px; padding: 16px; }
+  .stamp { display: inline-block; border: 2px solid #b45309; color: #b45309; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 3px; transform: rotate(-2deg); text-transform: uppercase; }
+  .folder-tab { padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: #e7e4db; }
+  .folder-tab:hover { background: #24303f; }
+  .folder-tab.active { background: #0f6e56; color: #fff; }
+  .tab-btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #0f6e56; background: transparent; color: #0f6e56; font-weight: 600; font-size: 13px; }
+  .tab-btn.active { background: #0f6e56; color: #fff; }
+  .doc-row { background: #fff; border: 1px solid #e2ded1; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+  .error-box { background: #fbeaf0; color: #72243e; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+
+<script>
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const TIPOS = ["Atestado médico", "Declaração de comparecimento", "Declaração escolar", "Outro"];
+
+const state = {
+  screen: 'config',
+  clientId: localStorage.getItem('pf_client_id') || '',
+  tokenClient: null,
+  accessToken: null,
+  tokenExpiry: 0,
+  folderId: null,
+  dataFileId: null,
+  employees: [],
+  docs: [],
+  tab: 'funcionarios',
+  selectedEmp: null,
+  error: '',
+  loading: false,
+  saving: false,
+  docForm: { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', file: null, error: '' },
+  search: { emp: '', tipo: '', texto: '', de: '', ate: '' }
+};
+
+function uid(prefix) { return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+function formatDate(iso) { if (!iso) return ''; const [y,m,d] = iso.split('-'); return d + '/' + m + '/' + y; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+function setError(msg) { state.error = msg; render(); }
+
+async function driveFetch(url, options = {}) {
+  if (!state.accessToken) throw new Error('Não autenticado');
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + state.accessToken;
+  let res = await fetch(url, options);
+  if (res.status === 401) {
+    await refreshToken();
+    options.headers['Authorization'] = 'Bearer ' + state.accessToken;
+    res = await fetch(url, options);
+  }
+  return res;
+}
+
+function refreshToken() {
+  return new Promise((resolve, reject) => {
+    state.tokenClient.callback = (resp) => {
+      if (resp.error) { reject(resp); return; }
+      state.accessToken = resp.access_token;
+      resolve();
+    };
+    state.tokenClient.requestAccessToken({ prompt: '' });
+  });
+}
+
+function initGoogle() {
+  state.tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: state.clientId,
+    scope: DRIVE_SCOPE,
+    callback: async (resp) => {
+      if (resp.error) { setError('Falha ao autenticar com o Google: ' + resp.error); return; }
+      state.accessToken = resp.access_token;
+      state.screen = 'app';
+      state.loading = true;
+      render();
+      try {
+        await ensureFolderAndData();
+      } catch (e) {
+        setError('Erro ao acessar o Google Drive: ' + e.message);
+      }
+      state.loading = false;
+      render();
+    }
+  });
+  state.tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+async function ensureFolderAndData() {
+  let res = await driveFetch("https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent("mimeType='application/vnd.google-apps.folder' and name='PastaFuncional' and trashed=false") + "&fields=files(id,name)");
+  let json = await res.json();
+  if (json.files && json.files.length > 0) {
+    state.folderId = json.files[0].id;
+  } else {
+    res = await driveFetch("https://www.googleapis.com/drive/v3/files", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'PastaFuncional', mimeType: 'application/vnd.google-apps.folder' })
+    });
+    json = await res.json();
+    state.folderId = json.id;
+  }
+
+  res = await driveFetch("https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent("'" + state.folderId + "' in parents and name='dados.json' and trashed=false") + "&fields=files(id,name)");
+  json = await res.json();
+  if (json.files && json.files.length > 0) {
+    state.dataFileId = json.files[0].id;
+    res = await driveFetch("https://www.googleapis.com/drive/v3/files/" + state.dataFileId + "?alt=media");
+    const data = await res.json();
+    state.employees = data.employees || [];
+    state.docs = data.docs || [];
+  } else {
+    const initial = { employees: [], docs: [] };
+    res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart", {
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/related; boundary=pfboundary' },
+      body: "--pfboundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
+            JSON.stringify({ name: 'dados.json', parents: [state.folderId] }) + "\r\n" +
+            "--pfboundary\r\nContent-Type: application/json\r\n\r\n" +
+            JSON.stringify(initial) + "\r\n--pfboundary--"
+    });
+    json = await res.json();
+    state.dataFileId = json.id;
+    state.employees = [];
+    state.docs = [];
+  }
+}
+
+async function saveData() {
+  const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files/" + state.dataFileId + "?uploadType=media", {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employees: state.employees, docs: state.docs })
+  });
+  if (!res.ok) throw new Error('Falha ao salvar dados no Drive');
+}
+
+function buildMultipartBody(metadata, file) {
+  const boundary = 'pfboundary';
+  const head = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
+               JSON.stringify(metadata) + "\r\n--" + boundary + "\r\nContent-Type: " + file.type + "\r\n\r\n";
+  const tail = "\r\n--" + boundary + "--";
+  return new Blob([head, file, tail]);
+}
+
+async function uploadAttachment(file, docId) {
+  const metadata = { name: docId + '_' + file.name, parents: [state.folderId] };
+  const body = buildMultipartBody(metadata, file);
+  const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
+    method: 'POST',
+    headers: { 'Content-Type': 'multipart/related; boundary=pfboundary' },
+    body
+  });
+  if (!res.ok) throw new Error('Falha ao enviar arquivo ao Drive');
+  return res.json();
+}
+
+async function deleteAttachment(fileId) {
+  try { await driveFetch("https://www.googleapis.com/drive/v3/files/" + fileId, { method: 'DELETE' }); } catch (e) {}
+}
+
+async function addEmployee(nome, cargo) {
+  nome = nome.trim();
+  if (!nome) return;
+  const emp = { id: uid('emp'), nome, cargo: cargo.trim() };
+  state.employees.push(emp);
+  state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  try { await saveData(); state.selectedEmp = emp.id; } catch (e) { setError('Não foi possível cadastrar o funcionário.'); }
+  render();
+}
+
+async function deleteEmployee(id) {
+  if (!confirm('Remover este funcionário? Os documentos anexados continuam salvos no Drive mas ficam sem funcionário vinculado visível.')) return;
+  state.employees = state.employees.filter(e => e.id !== id);
+  try { await saveData(); if (state.selectedEmp === id) state.selectedEmp = null; } catch (e) { setError('Não foi possível remover o funcionário.'); }
+  render();
+}
+
+function resetDocForm() { state.docForm = { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', file: null, error: '' }; }
+
+async function handleAddDocument(employeeId) {
+  const f = state.docForm;
+  f.error = '';
+  const tipoFinal = f.tipo === 'Outro' ? f.tipoOutro.trim() : f.tipo;
+  if (!tipoFinal) { f.error = 'Informe o tipo do documento.'; render(); return; }
+  if (!f.motivo.trim()) { f.error = 'O motivo é obrigatório.'; render(); return; }
+  if (!f.data) { f.error = 'A data é obrigatória.'; render(); return; }
+  if (!f.file) { f.error = 'Anexe um arquivo PDF ou JPEG.'; render(); return; }
+  const isPdf = f.file.type === 'application/pdf';
+  const isJpeg = f.file.type === 'image/jpeg' || f.file.type === 'image/jpg';
+  if (!isPdf && !isJpeg) { f.error = 'Só é permitido anexar arquivos PDF ou JPEG.'; render(); return; }
+
+  state.saving = true; render();
+  try {
+    const docId = uid('doc');
+    const uploaded = await uploadAttachment(f.file, docId);
+    const entry = {
+      id: docId, employeeId, tipo: tipoFinal, motivo: f.motivo.trim(), data: f.data,
+      arquivoNome: f.file.name, arquivoTipo: isPdf ? 'pdf' : 'jpeg',
+      driveFileId: uploaded.id, webViewLink: uploaded.webViewLink,
+      criadoEm: new Date().toISOString()
+    };
+    state.docs.unshift(entry);
+    await saveData();
+    resetDocForm();
+  } catch (e) {
+    f.error = 'Não foi possível salvar o documento. Tente novamente.';
+  }
+  state.saving = false;
+  render();
+}
+
+async function deleteDocument(docId) {
+  if (!confirm('Excluir este documento? Essa ação não pode ser desfeita.')) return;
+  const doc = state.docs.find(d => d.id === docId);
+  state.docs = state.docs.filter(d => d.id !== docId);
+  try {
+    await saveData();
+    if (doc && doc.driveFileId) await deleteAttachment(doc.driveFileId);
+  } catch (e) { setError('Não foi possível excluir o documento.'); }
+  render();
+}
+
+function viewDocument(doc) {
+  if (doc.webViewLink) window.open(doc.webViewLink, '_blank');
+}
+
+function employeeName(id) {
+  const e = state.employees.find(e => e.id === id);
+  return e ? e.nome : 'Funcionário removido';
+}
+
+function render() {
+  const app = document.getElementById('app');
+  if (state.screen === 'config') { app.innerHTML = renderConfig(); attachConfigHandlers(); return; }
+  app.innerHTML = renderApp();
+  attachAppHandlers();
+}
+
+function renderConfig() {
+  return `
+    <header style="margin-bottom:24px;">
+      <h1 style="font-size:26px;font-weight:700;margin:0;">Pasta funcional</h1>
+      <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
+    </header>
+    ${state.error ? `<div class="error-box">${esc(state.error)}</div>` : ''}
+    <div class="card" style="max-width:480px;">
+      <label class="label">Client ID do Google Cloud</label>
+      <input id="clientIdInput" class="field" placeholder="000000-xxxx.apps.googleusercontent.com" value="${esc(state.clientId)}" style="margin-bottom:12px;" />
+      <button id="connectBtn" class="btn-primary" style="width:100%;">Conectar ao Google Drive</button>
+      <p style="font-size:12px;color:#8f9a86;margin-top:10px;">O ID fica salvo neste navegador para as próximas vezes.</p>
+    </div>
+  `;
+}
+
+function attachConfigHandlers() {
+  document.getElementById('connectBtn').onclick = () => {
+    const val = document.getElementById('clientIdInput').value.trim();
+    if (!val) { setError('Cole o Client ID antes de conectar.'); return; }
+    state.clientId = val;
+    localStorage.setItem('pf_client_id', val);
+    state.error = '';
+    if (typeof google === 'undefined') { setError('A biblioteca do Google ainda não carregou. Aguarde alguns segundos e tente de novo.'); return; }
+    initGoogle();
+  };
+}
+
+function renderApp() {
+  const docsForSelected = state.docs.filter(d => d.employeeId === state.selectedEmp).sort((a,b) => a.data < b.data ? 1 : -1);
+  const results = state.docs.filter(d => {
+    const s = state.search;
+    if (s.emp && d.employeeId !== s.emp) return false;
+    if (s.tipo && d.tipo !== s.tipo) return false;
+    if (s.texto && !d.motivo.toLowerCase().includes(s.texto.toLowerCase())) return false;
+    if (s.de && d.data < s.de) return false;
+    if (s.ate && d.data > s.ate) return false;
+    return true;
+  }).sort((a,b) => a.data < b.data ? 1 : -1);
+
+  return `
+    <header style="margin-bottom:24px;">
+      <h1 style="font-size:26px;font-weight:700;margin:0;">Pasta funcional</h1>
+      <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Dados salvos na pasta "PastaFuncional" do seu Google Drive.</p>
+    </header>
+    ${state.error ? `<div class="error-box">${esc(state.error)}</div>` : ''}
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <button class="tab-btn ${state.tab==='funcionarios'?'active':''}" data-tab="funcionarios">Funcionários</button>
+      <button class="tab-btn ${state.tab==='buscar'?'active':''}" data-tab="buscar">Buscar documentos</button>
+    </div>
+    ${state.loading ? '<p style="color:#5f6b57;">Carregando...</p>' : state.tab === 'funcionarios' ? renderFuncionarios(docsForSelected) : renderBuscar(results)}
+  `;
+}
+
+function renderFuncionarios(docsForSelected) {
+  const empList = state.employees.map(e => `
+    <div class="folder-tab ${state.selectedEmp===e.id?'active':''}" data-select-emp="${e.id}">
+      <span><div style="font-weight:600;">${esc(e.nome)}</div>${e.cargo ? `<div style="font-size:11px;opacity:0.75;">${esc(e.cargo)}</div>` : ''}</span>
+    </div>
+  `).join('');
+
+  const sidebar = `
+    <div style="background:#1b2430;border-radius:10px;padding:16px;height:fit-content;">
+      <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:10px;">Funcionários (${state.employees.length})</p>
+      ${state.employees.length === 0 ? '<p style="font-size:13px;color:#8f9a86;">Nenhum funcionário cadastrado ainda.</p>' : empList}
+      <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Novo funcionário</p>
+        <input id="newEmpName" class="field" placeholder="Nome completo" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <button id="addEmpBtn" class="btn-primary" style="width:100%;">+ Cadastrar</button>
+      </div>
+    </div>
+  `;
+
+  let main;
+  if (!state.selectedEmp) {
+    main = `<div class="card" style="padding:40px;text-align:center;color:#5f6b57;">Selecione um funcionário à esquerda para ver ou anexar documentos.</div>`;
+  } else {
+    const f = state.docForm;
+    const docsHtml = docsForSelected.length === 0 ? '<p style="color:#5f6b57;font-size:13px;">Nenhum documento anexado ainda.</p>' :
+      docsForSelected.map(d => `
+        <div class="doc-row">
+          <div>
+            <div style="font-weight:600;font-size:13px;">${esc(d.tipo)} — ${formatDate(d.data)}</div>
+            <div style="font-size:13px;color:#374151;margin-top:2px;">${esc(d.motivo)}</div>
+            <div style="font-size:11px;color:#8f9a86;margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn-outline" data-view-doc="${d.id}">Ver/baixar</button>
+            <button class="btn-danger" data-delete-doc="${d.id}">Excluir</button>
+          </div>
+        </div>
+      `).join('');
+
+    main = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h2 style="font-size:19px;font-weight:600;margin:0;">${esc(employeeName(state.selectedEmp))}</h2>
+        <button class="btn-danger" data-delete-emp="${state.selectedEmp}">Remover funcionário</button>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <h3 style="font-size:14px;font-weight:600;margin:0;">Anexar novo documento</h3>
+          <span class="stamp">Obrigatório: motivo, data e arquivo</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <label class="label">Tipo</label>
+            <select id="docTipo" class="field">
+              ${TIPOS.map(t => `<option value="${t}" ${f.tipo===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+            ${f.tipo === 'Outro' ? `<input id="docTipoOutro" class="field" placeholder="Especifique o tipo" value="${esc(f.tipoOutro)}" style="margin-top:6px;" />` : ''}
+          </div>
+          <div>
+            <label class="label">Data *</label>
+            <input id="docData" type="date" class="field" value="${f.data}" />
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label class="label">Motivo *</label>
+          <textarea id="docMotivo" class="field" rows="3" placeholder="Ex: consulta médica, repouso de 3 dias, comparecimento ao INSS...">${esc(f.motivo)}</textarea>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label class="label">Arquivo (PDF ou JPEG) *</label>
+          <input id="docFile" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" class="field" />
+        </div>
+        ${f.error ? `<p style="color:#a32d2d;font-size:13px;margin-bottom:10px;">${esc(f.error)}</p>` : ''}
+        <button id="saveDocBtn" class="btn-primary" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Salvando...' : 'Salvar documento'}</button>
+      </div>
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">Documentos (${docsForSelected.length})</h3>
+      ${docsHtml}
+    `;
+  }
+
+  return `<div style="display:grid;grid-template-columns:260px 1fr;gap:20px;">${sidebar}<div>${main}</div></div>`;
+}
+
+function renderBuscar(results) {
+  const s = state.search;
+  const empOptions = state.employees.map(e => `<option value="${e.id}" ${s.emp===e.id?'selected':''}>${esc(e.nome)}</option>`).join('');
+  const tipoOptions = TIPOS.map(t => `<option value="${t}" ${s.tipo===t?'selected':''}>${t}</option>`).join('');
+  const resultsHtml = results.map(d => `
+    <div class="doc-row">
+      <div>
+        <div style="font-weight:600;font-size:13px;">${esc(employeeName(d.employeeId))} — ${esc(d.tipo)} — ${formatDate(d.data)}</div>
+        <div style="font-size:13px;color:#374151;margin-top:2px;">${esc(d.motivo)}</div>
+        <div style="font-size:11px;color:#8f9a86;margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
+      </div>
+      <button class="btn-outline" data-view-doc="${d.id}">Ver/baixar</button>
+    </div>
+  `).join('');
+
+  return `
+    <div class="card" style="margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:10px;">
+      <div><label class="label">Funcionário</label><select id="sEmp" class="field"><option value="">Todos</option>${empOptions}</select></div>
+      <div><label class="label">Tipo</label><select id="sTipo" class="field"><option value="">Todos</option>${tipoOptions}</select></div>
+      <div><label class="label">De</label><input id="sDe" type="date" class="field" value="${s.de}" /></div>
+      <div><label class="label">Até</label><input id="sAte" type="date" class="field" value="${s.ate}" /></div>
+      <div><label class="label">Motivo contém</label><input id="sTexto" class="field" placeholder="palavra-chave" value="${esc(s.texto)}" /></div>
+    </div>
+    <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)</p>
+    ${resultsHtml}
+  `;
+}
+
+function attachAppHandlers() {
+  document.querySelectorAll('.tab-btn').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; render(); });
+  const addEmpBtn = document.getElementById('addEmpBtn');
+  if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCargo').value);
+  document.querySelectorAll('[data-select-emp]').forEach(el => el.onclick = () => { state.selectedEmp = el.dataset.selectEmp; resetDocForm(); render(); });
+  document.querySelectorAll('[data-delete-emp]').forEach(el => el.onclick = () => deleteEmployee(el.dataset.deleteEmp));
+  document.querySelectorAll('[data-delete-doc]').forEach(el => el.onclick = () => deleteDocument(el.dataset.deleteDoc));
+  document.querySelectorAll('[data-view-doc]').forEach(el => el.onclick = () => viewDocument(state.docs.find(d => d.id === el.dataset.viewDoc)));
+
+  const docTipo = document.getElementById('docTipo');
+  if (docTipo) docTipo.onchange = () => { state.docForm.tipo = docTipo.value; render(); };
+  const docTipoOutro = document.getElementById('docTipoOutro');
+  if (docTipoOutro) docTipoOutro.oninput = () => { state.docForm.tipoOutro = docTipoOutro.value; };
+  const docMotivo = document.getElementById('docMotivo');
+  if (docMotivo) docMotivo.oninput = () => { state.docForm.motivo = docMotivo.value; };
+  const docData = document.getElementById('docData');
+  if (docData) docData.oninput = () => { state.docForm.data = docData.value; };
+  const docFile = document.getElementById('docFile');
+  if (docFile) docFile.onchange = () => { state.docForm.file = docFile.files[0] || null; };
+  const saveDocBtn = document.getElementById('saveDocBtn');
+  if (saveDocBtn) saveDocBtn.onclick = () => handleAddDocument(state.selectedEmp);
+
+  const sEmp = document.getElementById('sEmp');
+  if (sEmp) sEmp.onchange = () => { state.search.emp = sEmp.value; render(); };
+  const sTipo = document.getElementById('sTipo');
+  if (sTipo) sTipo.onchange = () => { state.search.tipo = sTipo.value; render(); };
+  const sDe = document.getElementById('sDe');
+  if (sDe) sDe.onchange = () => { state.search.de = sDe.value; render(); };
+  const sAte = document.getElementById('sAte');
+  if (sAte) sAte.onchange = () => { state.search.ate = sAte.value; render(); };
+  const sTexto = document.getElementById('sTexto');
+  if (sTexto) sTexto.oninput = () => { state.search.texto = sTexto.value; render(); };
+}
+
+render();
+</script>
+</body>
+</html>
