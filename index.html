@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<title>Pasta funcional</title>
+<title>RH Digital</title>
 <script src="https://accounts.google.com/gsi/client" async defer onload="onGsiLoad()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
   * { box-sizing: border-box; }
@@ -249,10 +250,10 @@ async function deleteAttachment(fileId) {
   try { await driveFetch("https://www.googleapis.com/drive/v3/files/" + fileId, { method: 'DELETE' }); } catch (e) {}
 }
 
-async function addEmployee(nome, cargo) {
+async function addEmployee(nome, cpf, cargo) {
   nome = nome.trim();
   if (!nome) return;
-  const emp = { id: uid('emp'), nome, cargo: cargo.trim() };
+  const emp = { id: uid('emp'), nome, cpf: (cpf || '').trim(), cargo: cargo.trim() };
   state.employees.push(emp);
   state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   try { await saveData(); state.selectedEmp = emp.id; } catch (e) { setError('Não foi possível cadastrar o funcionário.'); }
@@ -263,6 +264,52 @@ async function deleteEmployee(id) {
   if (!confirm('Remover este funcionário? Os documentos anexados continuam salvos no Drive mas ficam sem funcionário vinculado visível.')) return;
   state.employees = state.employees.filter(e => e.id !== id);
   try { await saveData(); if (state.selectedEmp === id) state.selectedEmp = null; } catch (e) { setError('Não foi possível remover o funcionário.'); }
+  render();
+}
+
+function onlyDigits(s) { return (s || '').toString().replace(/\D/g, ''); }
+
+async function importEmployeesFile(file) {
+  if (!file) return;
+  state.importMsg = 'Lendo planilha...';
+  render();
+  try {
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    const existingCpfs = new Set(state.employees.filter(e => e.cpf).map(e => onlyDigits(e.cpf)));
+    const existingNames = new Set(state.employees.map(e => e.nome.trim().toLowerCase()));
+
+    let added = 0, skipped = 0;
+    for (const row of rows) {
+      const keys = Object.keys(row);
+      const nomeKey = keys.find(k => k.trim().toLowerCase() === 'nome');
+      const cpfKey = keys.find(k => k.trim().toLowerCase() === 'cpf');
+      const cargoKey = keys.find(k => k.trim().toLowerCase() === 'cargo');
+      const nome = nomeKey ? String(row[nomeKey]).trim() : '';
+      const cpf = cpfKey ? String(row[cpfKey]).trim() : '';
+      const cargo = cargoKey ? String(row[cargoKey]).trim() : '';
+      if (!nome) { continue; }
+      const cpfDigits = onlyDigits(cpf);
+      if ((cpfDigits && existingCpfs.has(cpfDigits)) || (!cpfDigits && existingNames.has(nome.toLowerCase()))) {
+        skipped++;
+        continue;
+      }
+      state.employees.push({ id: uid('emp'), nome, cpf, cargo });
+      if (cpfDigits) existingCpfs.add(cpfDigits);
+      existingNames.add(nome.toLowerCase());
+      added++;
+    }
+    state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    await saveData();
+    state.importMsg = added + ' funcionário(s) importado(s)' + (skipped ? ', ' + skipped + ' ignorado(s) por já existirem' : '') + '.';
+  } catch (e) {
+    state.importMsg = '';
+    setError('Não foi possível importar a planilha. Verifique se tem colunas "Nome" e "CPF".');
+    return;
+  }
   render();
 }
 
@@ -320,10 +367,16 @@ function employeeName(id) {
   return e ? e.nome : 'Funcionário removido';
 }
 
+function employeeLabel(id) {
+  const e = state.employees.find(e => e.id === id);
+  if (!e) return 'Funcionário removido';
+  return e.cpf ? e.nome + ' — ' + e.cpf : e.nome;
+}
+
 function render() {
   const app = document.getElementById('app');
   if (state.screen === 'connecting') {
-    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;">Pasta funcional</h1></header><p style="color:#5f6b57;">Reconectando ao Google Drive...</p>`;
+    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></header><p style="color:#5f6b57;">Reconectando ao Google Drive...</p>`;
     return;
   }
   if (state.screen === 'config') { app.innerHTML = renderConfig(); attachConfigHandlers(); return; }
@@ -334,7 +387,7 @@ function render() {
 function renderConfig() {
   return `
     <header style="margin-bottom:24px;">
-      <h1 style="font-size:26px;font-weight:700;margin:0;">Pasta funcional</h1>
+      <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
       <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
     </header>
     ${state.error ? `<div class="error-box">${esc(state.error)}</div>` : ''}
@@ -380,8 +433,7 @@ function renderApp() {
   return `
     <header style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start;">
       <div>
-        <h1 style="font-size:26px;font-weight:700;margin:0;">Pasta funcional</h1>
-        <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Dados salvos na pasta "PastaFuncional" do seu Google Drive.</p>
+        <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
       </div>
       <div style="text-align:right;">
         ${state.userEmail ? `<p style="font-size:12px;color:#5f6b57;margin:0 0 6px 0;">Conectado como <strong>${esc(state.userEmail)}</strong></p>` : ''}
@@ -398,21 +450,41 @@ function renderApp() {
 }
 
 function renderFuncionarios(docsForSelected) {
-  const empList = state.employees.map(e => `
+  const filterQ = (state.empFilter || '').trim().toLowerCase();
+  const filteredEmployees = filterQ
+    ? state.employees.filter(e => e.nome.toLowerCase().includes(filterQ) || onlyDigits(e.cpf).includes(onlyDigits(filterQ)) || (e.cpf || '').toLowerCase().includes(filterQ))
+    : state.employees;
+
+  const empList = filteredEmployees.map(e => `
     <div class="folder-tab ${state.selectedEmp===e.id?'active':''}" data-select-emp="${e.id}">
-      <span><div style="font-weight:600;">${esc(e.nome)}</div>${e.cargo ? `<div style="font-size:11px;opacity:0.75;">${esc(e.cargo)}</div>` : ''}</span>
+      <span><div style="font-weight:600;">${esc(e.nome)}</div>${e.cpf ? `<div style="font-size:11px;opacity:0.75;font-family:'IBM Plex Mono',monospace;">${esc(e.cpf)}</div>` : ''}${e.cargo ? `<div style="font-size:11px;opacity:0.75;">${esc(e.cargo)}</div>` : ''}</span>
     </div>
   `).join('');
 
   const sidebar = `
     <div style="background:#1b2430;border-radius:10px;padding:16px;height:fit-content;">
       <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:10px;">Funcionários (${state.employees.length})</p>
-      ${state.employees.length === 0 ? '<p style="font-size:13px;color:#8f9a86;">Nenhum funcionário cadastrado ainda.</p>' : empList}
+      <input id="empFilterInput" class="field" placeholder="Buscar por nome ou CPF" value="${esc(state.empFilter || '')}" style="margin-bottom:10px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+      ${state.employees.length === 0
+        ? '<p style="font-size:13px;color:#8f9a86;">Nenhum funcionário cadastrado ainda.</p>'
+        : (filterQ === ''
+          ? '<p style="font-size:13px;color:#8f9a86;">Digite o nome ou CPF acima para localizar um funcionário.</p>'
+          : (filteredEmployees.length === 0
+            ? '<p style="font-size:13px;color:#8f9a86;">Nenhum resultado para essa busca.</p>'
+            : empList))}
       <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
         <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Novo funcionário</p>
         <input id="newEmpName" class="field" placeholder="Nome completo" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpCpf" class="field" placeholder="CPF" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
         <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
         <button id="addEmpBtn" class="btn-primary" style="width:100%;">+ Cadastrar</button>
+      </div>
+      <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Importar em massa</p>
+        <input id="importFile" type="file" accept=".csv,.xlsx,.xls" style="display:none;" />
+        <button id="importBtn" class="btn-outline" style="width:100%;border-color:#3a4757;color:#e7e4db;">Importar CSV/Excel</button>
+        <p style="font-size:10px;color:#8f9a86;margin-top:6px;">Colunas: Nome, CPF, Cargo (opcional)</p>
+        ${state.importMsg ? `<p style="font-size:11px;color:#9fd6c3;margin-top:6px;">${esc(state.importMsg)}</p>` : ''}
       </div>
     </div>
   `;
@@ -481,12 +553,12 @@ function renderFuncionarios(docsForSelected) {
 
 function renderBuscar(results) {
   const s = state.search;
-  const empOptions = state.employees.map(e => `<option value="${e.id}" ${s.emp===e.id?'selected':''}>${esc(e.nome)}</option>`).join('');
+  const empOptions = state.employees.map(e => `<option value="${e.id}" ${s.emp===e.id?'selected':''}>${esc(e.cpf ? e.nome + ' — ' + e.cpf : e.nome)}</option>`).join('');
   const tipoOptions = TIPOS.map(t => `<option value="${t}" ${s.tipo===t?'selected':''}>${t}</option>`).join('');
   const resultsHtml = results.map(d => `
     <div class="doc-row">
       <div>
-        <div style="font-weight:600;font-size:13px;">${esc(employeeName(d.employeeId))} — ${esc(d.tipo)} — ${formatDate(d.data)}</div>
+        <div style="font-weight:600;font-size:13px;">${esc(employeeLabel(d.employeeId))} — ${esc(d.tipo)} — ${formatDate(d.data)}</div>
         <div style="font-size:13px;color:#374151;margin-top:2px;">${esc(d.motivo)}</div>
         <div style="font-size:11px;color:#8f9a86;margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
       </div>
@@ -512,7 +584,15 @@ function attachAppHandlers() {
   const disconnectBtn = document.getElementById('disconnectBtn');
   if (disconnectBtn) disconnectBtn.onclick = disconnect;
   const addEmpBtn = document.getElementById('addEmpBtn');
-  if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCargo').value);
+  if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCpf').value, document.getElementById('newEmpCargo').value);
+  const empFilterInput = document.getElementById('empFilterInput');
+  if (empFilterInput) empFilterInput.oninput = () => { state.empFilter = empFilterInput.value; render(); };
+  const importBtn = document.getElementById('importBtn');
+  const importFile = document.getElementById('importFile');
+  if (importBtn && importFile) {
+    importBtn.onclick = () => importFile.click();
+    importFile.onchange = () => { if (importFile.files[0]) importEmployeesFile(importFile.files[0]); };
+  }
   document.querySelectorAll('[data-select-emp]').forEach(el => el.onclick = () => { state.selectedEmp = el.dataset.selectEmp; resetDocForm(); render(); });
   document.querySelectorAll('[data-delete-emp]').forEach(el => el.onclick = () => deleteEmployee(el.dataset.deleteEmp));
   document.querySelectorAll('[data-delete-doc]').forEach(el => el.onclick = () => deleteDocument(el.dataset.deleteDoc));
