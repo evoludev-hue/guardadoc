@@ -128,10 +128,21 @@ function onGsiLoad() {
 function attemptSilentConnect() {
   state.screen = 'connecting';
   render();
+  let settled = false;
+  const timeoutId = setTimeout(() => {
+    if (!settled) {
+      settled = true;
+      state.screen = 'config';
+      render();
+    }
+  }, 3500);
   state.tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: state.clientId,
     scope: DRIVE_SCOPE + ' ' + USERINFO_SCOPE,
     callback: async (resp) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
       if (resp.error) { state.screen = 'config'; render(); return; }
       state.accessToken = resp.access_token;
       await fetchUserInfo();
@@ -247,7 +258,13 @@ async function uploadAttachment(file, docId) {
 }
 
 async function deleteAttachment(fileId) {
-  try { await driveFetch("https://www.googleapis.com/drive/v3/files/" + fileId, { method: 'DELETE' }); } catch (e) {}
+  try {
+    await driveFetch("https://www.googleapis.com/drive/v3/files/" + fileId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trashed: true })
+    });
+  } catch (e) {}
 }
 
 async function addEmployee(nome, cpf, cargo) {
@@ -348,7 +365,7 @@ async function handleAddDocument(employeeId) {
 }
 
 async function deleteDocument(docId) {
-  if (!confirm('Excluir este documento? Essa ação não pode ser desfeita.')) return;
+  if (!confirm('Excluir este documento? O arquivo vai para a lixeira do Google Drive (pode ser restaurado por lá em até 30 dias).')) return;
   const doc = state.docs.find(d => d.id === docId);
   state.docs = state.docs.filter(d => d.id !== docId);
   try {
@@ -376,7 +393,11 @@ function employeeLabel(id) {
 function render() {
   const app = document.getElementById('app');
   if (state.screen === 'connecting') {
-    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></header><p style="color:#5f6b57;">Reconectando ao Google Drive...</p>`;
+    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
+    setTimeout(() => {
+      const btn = document.getElementById('skipConnectingBtn');
+      if (btn) btn.onclick = () => { state.screen = 'config'; render(); };
+    }, 0);
     return;
   }
   if (state.screen === 'config') { app.innerHTML = renderConfig(); attachConfigHandlers(); return; }
@@ -464,7 +485,10 @@ function renderFuncionarios(docsForSelected) {
   const sidebar = `
     <div style="background:#1b2430;border-radius:10px;padding:16px;height:fit-content;">
       <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:10px;">Funcionários (${state.employees.length})</p>
-      <input id="empFilterInput" class="field" placeholder="Buscar por nome ou CPF" value="${esc(state.empFilter || '')}" style="margin-bottom:10px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <input id="empFilterInput" class="field" placeholder="Buscar por nome ou CPF" value="${esc(state.empFilter || '')}" style="background:#243040;border:1px solid #3a4757;color:#e7e4db;flex:1;" />
+        <button id="empSearchBtn" class="btn-primary" style="padding:8px 12px;">Buscar</button>
+      </div>
       ${state.employees.length === 0
         ? '<p style="font-size:13px;color:#8f9a86;">Nenhum funcionário cadastrado ainda.</p>'
         : (filterQ === ''
@@ -586,7 +610,12 @@ function attachAppHandlers() {
   const addEmpBtn = document.getElementById('addEmpBtn');
   if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCpf').value, document.getElementById('newEmpCargo').value);
   const empFilterInput = document.getElementById('empFilterInput');
-  if (empFilterInput) empFilterInput.oninput = () => { state.empFilter = empFilterInput.value; render(); };
+  const empSearchBtn = document.getElementById('empSearchBtn');
+  if (empFilterInput && empSearchBtn) {
+    const doSearch = () => { state.empFilter = empFilterInput.value; render(); };
+    empSearchBtn.onclick = doSearch;
+    empFilterInput.onkeydown = (ev) => { if (ev.key === 'Enter') doSearch(); };
+  }
   const importBtn = document.getElementById('importBtn');
   const importFile = document.getElementById('importFile');
   if (importBtn && importFile) {
