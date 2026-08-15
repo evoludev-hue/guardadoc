@@ -61,6 +61,7 @@ const state = {
   loading: false,
   saving: false,
   docForm: { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', file: null, error: '' },
+  empFormError: '',
   search: { emp: '', tipo: '', texto: '', de: '', ate: '' }
 };
 
@@ -245,8 +246,9 @@ function buildMultipartBody(metadata, file) {
   return new Blob([head, file, tail]);
 }
 
-async function uploadAttachment(file, docId) {
-  const metadata = { name: docId + '_' + file.name, parents: [state.folderId] };
+async function uploadAttachment(file, docId, employee) {
+  const empPart = employee ? slugify(employee.nome) + (employee.cpf ? '_' + onlyDigits(employee.cpf) : '') : 'funcionario';
+  const metadata = { name: empPart + '_' + docId + '_' + file.name, parents: [state.folderId] };
   const body = buildMultipartBody(metadata, file);
   const res = await driveFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
     method: 'POST',
@@ -269,8 +271,16 @@ async function deleteAttachment(fileId) {
 
 async function addEmployee(nome, cpf, cargo) {
   nome = nome.trim();
+  cpf = (cpf || '').trim();
+  state.empFormError = '';
   if (!nome) return;
-  const emp = { id: uid('emp'), nome, cpf: (cpf || '').trim(), cargo: cargo.trim() };
+  if (cpf && !isValidCpf(cpf)) {
+    state.empFormError = 'CPF inválido. Confira os números digitados.';
+    render();
+    return;
+  }
+  const cpfFormatted = cpf ? formatCpf(cpf) : '';
+  const emp = { id: uid('emp'), nome, cpf: cpfFormatted, cargo: cargo.trim() };
   state.employees.push(emp);
   state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   try { await saveData(); state.selectedEmp = emp.id; } catch (e) { setError('Não foi possível cadastrar o funcionário.'); }
@@ -285,6 +295,34 @@ async function deleteEmployee(id) {
 }
 
 function onlyDigits(s) { return (s || '').toString().replace(/\D/g, ''); }
+
+function formatCpf(v) {
+  v = onlyDigits(v).slice(0, 11);
+  if (v.length <= 3) return v;
+  if (v.length <= 6) return v.slice(0,3) + '.' + v.slice(3);
+  if (v.length <= 9) return v.slice(0,3) + '.' + v.slice(3,6) + '.' + v.slice(6);
+  return v.slice(0,3) + '.' + v.slice(3,6) + '.' + v.slice(6,9) + '-' + v.slice(9);
+}
+
+function isValidCpf(cpf) {
+  const s = onlyDigits(cpf);
+  if (s.length !== 11 || /^(\d)\1{10}$/.test(s)) return false;
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += parseInt(s[i]) * (10 - i);
+  let rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  if (rev !== parseInt(s[9])) return false;
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += parseInt(s[i]) * (11 - i);
+  rev = 11 - (sum % 11);
+  if (rev >= 10) rev = 0;
+  if (rev !== parseInt(s[10])) return false;
+  return true;
+}
+
+function slugify(s) {
+  return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
 
 async function importEmployeesFile(file) {
   if (!file) return;
@@ -309,12 +347,14 @@ async function importEmployeesFile(file) {
       const cpf = cpfKey ? String(row[cpfKey]).trim() : '';
       const cargo = cargoKey ? String(row[cargoKey]).trim() : '';
       if (!nome) { continue; }
+      if (cpf && !isValidCpf(cpf)) { skipped++; continue; }
+      const cpfFormatted = cpf ? formatCpf(cpf) : '';
       const cpfDigits = onlyDigits(cpf);
       if ((cpfDigits && existingCpfs.has(cpfDigits)) || (!cpfDigits && existingNames.has(nome.toLowerCase()))) {
         skipped++;
         continue;
       }
-      state.employees.push({ id: uid('emp'), nome, cpf, cargo });
+      state.employees.push({ id: uid('emp'), nome, cpf: cpfFormatted, cargo });
       if (cpfDigits) existingCpfs.add(cpfDigits);
       existingNames.add(nome.toLowerCase());
       added++;
@@ -347,7 +387,8 @@ async function handleAddDocument(employeeId) {
   state.saving = true; render();
   try {
     const docId = uid('doc');
-    const uploaded = await uploadAttachment(f.file, docId);
+    const employee = state.employees.find(e => e.id === employeeId);
+    const uploaded = await uploadAttachment(f.file, docId, employee);
     const entry = {
       id: docId, employeeId, tipo: tipoFinal, motivo: f.motivo.trim(), data: f.data,
       arquivoNome: f.file.name, arquivoTipo: isPdf ? 'pdf' : 'jpeg',
@@ -472,8 +513,14 @@ function renderApp() {
 
 function renderFuncionarios(docsForSelected) {
   const filterQ = (state.empFilter || '').trim().toLowerCase();
+  const filterDigits = onlyDigits(filterQ);
   const filteredEmployees = filterQ
-    ? state.employees.filter(e => e.nome.toLowerCase().includes(filterQ) || onlyDigits(e.cpf).includes(onlyDigits(filterQ)) || (e.cpf || '').toLowerCase().includes(filterQ))
+    ? state.employees.filter(e => {
+        const nameMatch = e.nome.toLowerCase().includes(filterQ);
+        const cpfTextMatch = (e.cpf || '').toLowerCase().includes(filterQ);
+        const cpfDigitMatch = filterDigits.length > 0 && onlyDigits(e.cpf).includes(filterDigits);
+        return nameMatch || cpfTextMatch || cpfDigitMatch;
+      })
     : state.employees;
 
   const empList = filteredEmployees.map(e => `
@@ -499,8 +546,9 @@ function renderFuncionarios(docsForSelected) {
       <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
         <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Novo funcionário</p>
         <input id="newEmpName" class="field" placeholder="Nome completo" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
-        <input id="newEmpCpf" class="field" placeholder="CPF" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpCpf" class="field" placeholder="CPF" maxlength="14" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
         <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        ${state.empFormError ? `<p style="font-size:11px;color:#f0a3a3;margin-bottom:8px;">${esc(state.empFormError)}</p>` : ''}
         <button id="addEmpBtn" class="btn-primary" style="width:100%;">+ Cadastrar</button>
       </div>
       <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
@@ -609,6 +657,8 @@ function attachAppHandlers() {
   if (disconnectBtn) disconnectBtn.onclick = disconnect;
   const addEmpBtn = document.getElementById('addEmpBtn');
   if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCpf').value, document.getElementById('newEmpCargo').value);
+  const newEmpCpf = document.getElementById('newEmpCpf');
+  if (newEmpCpf) newEmpCpf.oninput = () => { newEmpCpf.value = formatCpf(newEmpCpf.value); };
   const empFilterInput = document.getElementById('empFilterInput');
   const empSearchBtn = document.getElementById('empSearchBtn');
   if (empFilterInput && empSearchBtn) {
