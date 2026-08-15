@@ -7,6 +7,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>RH Digital</title>
 <script src="https://accounts.google.com/gsi/client" async defer onload="onGsiLoad()"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -27,6 +28,20 @@
   .btn-danger:hover { background: #fbeaea; }
   .doc-row { transition: box-shadow 0.15s ease; }
   .doc-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .layout-grid { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .search-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+  @media (max-width: 720px) {
+    .wrap { padding: 16px 12px 40px; }
+    .layout-grid { grid-template-columns: 1fr; }
+    .form-grid-2 { grid-template-columns: 1fr; }
+    .search-grid { grid-template-columns: 1fr; }
+    h1 { font-size: 21px !important; }
+    .doc-row { flex-direction: column; align-items: flex-start !important; gap: 10px !important; }
+    .doc-row > div:last-child { width: 100%; display: flex; }
+    .doc-row > div:last-child button { flex: 1; }
+    .tab-btn { flex: 1; }
+  }
   .field { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5c0; font-size: 14px; background: #fdfcf9; color: #1b2430; }
   .label { font-size: 12px; font-weight: 600; color: #5f6b57; margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.03em; }
   .card { background: #fff; border: 1px solid #e2ded1; border-radius: 10px; padding: 16px; }
@@ -44,7 +59,7 @@
 <div id="app" class="wrap"></div>
 
 <script>
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
 const TIPOS = ["Atestado médico", "Declaração de comparecimento", "Declaração escolar", "Outro"];
@@ -610,7 +625,7 @@ function renderApp() {
   }).sort((a,b) => a.data < b.data ? 1 : -1);
 
   return `
-    <header style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start;">
+    <header style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
       <div>
         <div style="display:flex;align-items:center;gap:10px;">
           <h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1>
@@ -715,7 +730,7 @@ function renderFuncionarios(docsForSelected) {
           <h3 style="font-size:14px;font-weight:600;margin:0;">Anexar novo documento</h3>
           <span class="stamp">Obrigatório: motivo, data e arquivo</span>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="form-grid-2">
           <div>
             <label class="label">Tipo</label>
             <select id="docTipo" class="field">
@@ -746,7 +761,7 @@ function renderFuncionarios(docsForSelected) {
     `;
   }
 
-  return `<div style="display:grid;grid-template-columns:260px 1fr;gap:20px;">${sidebar}<div>${main}</div></div>`;
+  return `<div class="layout-grid">${sidebar}<div>${main}</div></div>`;
 }
 
 function renderEditEmployeeForm() {
@@ -798,7 +813,7 @@ function renderBuscar(results) {
   ` : '';
 
   return `
-    <div class="card" style="margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;">
+    <div class="card search-grid" style="margin-bottom:20px;">
       <div><label class="label">Funcionário</label><select id="sEmp" class="field"><option value="">Todos</option>${empOptions}</select></div>
       <div><label class="label">Tipo</label><select id="sTipo" class="field"><option value="">Todos</option>${tipoOptions}</select></div>
       <div><label class="label">De</label><input id="sDe" type="date" class="field" value="${s.de}" /></div>
