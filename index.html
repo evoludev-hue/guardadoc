@@ -1,7 +1,7 @@
 <!--
   RH Digital
   Criado e desenvolvido por Denis Miranda By São Jorge
-  Versão 1.0
+  Versão 1.5
 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -12,22 +12,38 @@
 <script src="https://accounts.google.com/gsi/client" async defer onload="onGsiLoad()"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root {
+    --navy-950:#060e1f;
+    --navy-900:#0a1830;
+    --navy-800:#0f2140;
+    --navy-700:#16305a;
+    --navy-600:#1e3d6e;
+    --gold-500:#d4af37;
+    --gold-400:#e6c667;
+    --gold-300:#f0d998;
+    --white:#ffffff;
+    --off-white:#f4f6fa;
+    --muted:#a9b6cf;
+    --muted-dark:#4b5b78;
+    --border-light:#e2e6f0;
+  }
   * { box-sizing: border-box; }
-  body { font-family: 'Space Grotesk', sans-serif; background: #f4f2ec; color: #1b2430; margin: 0; }
-  button { cursor: pointer; font-family: 'Space Grotesk', sans-serif; }
+  body { font-family: 'Inter', sans-serif; background: var(--off-white); color: var(--navy-900); margin: 0; }
+  h1, h2, h3 { font-family: 'Poppins', sans-serif; }
+  button { cursor: pointer; font-family: 'Inter', sans-serif; }
   input, select, textarea { font-family: 'IBM Plex Mono', monospace; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
-  .btn-primary { padding: 9px 18px; border-radius: 6px; border: none; background: #0f6e56; color: #fff; font-weight: 600; font-size: 13px; transition: background 0.15s ease, transform 0.1s ease; }
-  .btn-primary:hover:not(:disabled) { background: #0c5945; }
+  .btn-primary { padding: 9px 18px; border-radius: 6px; border: none; background: linear-gradient(135deg, var(--gold-400), var(--gold-500)); color: var(--navy-950); font-weight: 600; font-size: 13px; transition: box-shadow 0.15s ease, transform 0.1s ease; }
+  .btn-primary:hover:not(:disabled) { box-shadow: 0 10px 20px -6px rgba(212,175,55,.55); transform: translateY(-1px); }
   .btn-primary:active:not(:disabled) { transform: scale(0.98); }
-  .btn-primary:disabled { background: #8f9a86; }
-  .btn-outline { font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid #0f6e56; background: transparent; color: #0f6e56; transition: background 0.15s ease; }
-  .btn-outline:hover { background: #eaf4f1; }
+  .btn-primary:disabled { background: var(--muted); }
+  .btn-outline { font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--navy-900); background: transparent; color: var(--navy-900); transition: background 0.15s ease; }
+  .btn-outline:hover { background: rgba(10,24,48,.06); }
   .btn-danger { font-size: 12px; padding: 5px 10px; border-radius: 6px; border: 1px solid #e24b4a; background: transparent; color: #a32d2d; transition: background 0.15s ease; }
   .btn-danger:hover { background: #fbeaea; }
   .doc-row { transition: box-shadow 0.15s ease; }
-  .doc-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .doc-row:hover { box-shadow: 0 2px 8px rgba(10,24,48,0.08); }
   .layout-grid { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
   .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
   .search-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
@@ -42,16 +58,16 @@
     .doc-row > div:last-child button { flex: 1; }
     .tab-btn { flex: 1; }
   }
-  .field { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #cbd5c0; font-size: 14px; background: #fdfcf9; color: #1b2430; }
-  .label { font-size: 12px; font-weight: 600; color: #5f6b57; margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.03em; }
-  .card { background: #fff; border: 1px solid #e2ded1; border-radius: 10px; padding: 16px; }
+  .field { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-light); font-size: 14px; background: var(--white); color: var(--navy-900); }
+  .label { font-size: 12px; font-weight: 600; color: var(--muted-dark); margin-bottom: 4px; display: block; text-transform: uppercase; letter-spacing: 0.03em; }
+  .card { background: var(--white); border: 1px solid var(--border-light); border-radius: 10px; padding: 16px; }
   .stamp { display: inline-block; border: 2px solid #b45309; color: #b45309; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 6px; border-radius: 3px; transform: rotate(-2deg); text-transform: uppercase; }
-  .folder-tab { padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: #e7e4db; }
-  .folder-tab:hover { background: #24303f; }
-  .folder-tab.active { background: #0f6e56; color: #fff; }
-  .tab-btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #0f6e56; background: transparent; color: #0f6e56; font-weight: 600; font-size: 13px; }
-  .tab-btn.active { background: #0f6e56; color: #fff; }
-  .doc-row { background: #fff; border: 1px solid #e2ded1; border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+  .folder-tab { padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; color: var(--off-white); }
+  .folder-tab:hover { background: var(--navy-800); }
+  .folder-tab.active { background: var(--gold-500); color: var(--navy-950); }
+  .tab-btn { padding: 8px 16px; border-radius: 6px; border: 1px solid var(--navy-900); background: transparent; color: var(--navy-900); font-weight: 600; font-size: 13px; }
+  .tab-btn.active { background: var(--navy-900); color: var(--gold-300); border-color: var(--navy-900); }
+  .doc-row { background: var(--white); border: 1px solid var(--border-light); border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
   .error-box { background: #fbeaf0; color: #72243e; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
 </style>
 </head>
@@ -59,7 +75,7 @@
 <div id="app" class="wrap"></div>
 
 <script>
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.5';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
 const TIPOS = ["Atestado médico", "Declaração de comparecimento", "Declaração escolar", "Outro"];
@@ -145,10 +161,15 @@ function initGoogle() {
   state.tokenClient.requestAccessToken({ prompt: 'consent' });
 }
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+}
+
 function onGsiLoad() {
-  if (state.clientId) {
+  if (state.clientId && !isMobileDevice()) {
     attemptSilentConnect();
   } else {
+    if (state.clientId) state.screen = 'config';
     render();
   }
 }
@@ -563,7 +584,7 @@ function employeeLabel(id) {
 function render() {
   const app = document.getElementById('app');
   if (state.screen === 'connecting') {
-    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
+    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1></header><p style="color:var(--muted-dark);margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
     setTimeout(() => {
       const btn = document.getElementById('skipConnectingBtn');
       if (btn) btn.onclick = () => { state.screen = 'config'; render(); };
@@ -581,7 +602,7 @@ function renderConfig() {
       <div style="display:flex;align-items:center;gap:10px;">
         <h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1>
       </div>
-      <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
+      <p style="color:var(--muted-dark);font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
     </header>
     ${state.error ? `<div class="error-box">${esc(state.error)}</div>` : ''}
     <div class="card" style="max-width:480px;">
@@ -589,11 +610,12 @@ function renderConfig() {
       <input id="clientIdInput" class="field" placeholder="000000-xxxx.apps.googleusercontent.com" value="${esc(state.clientId)}" style="margin-bottom:12px;" />
       <label class="label">E-mail autorizado a excluir (opcional)</label>
       <input id="adminEmailInput" class="field" placeholder="seuemail@gmail.com" value="${esc(state.adminEmail)}" style="margin-bottom:12px;" />
-      <p style="font-size:12px;color:#8f9a86;margin-bottom:12px;margin-top:-6px;">Só quem logar no Drive com esse e-mail vai poder apagar funcionários e documentos. Deixe em branco para permitir a qualquer pessoa conectada.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;margin-top:-6px;">Só quem logar no Drive com esse e-mail vai poder apagar funcionários e documentos. Deixe em branco para permitir a qualquer pessoa conectada.</p>
       <button id="connectBtn" class="btn-primary" style="width:100%;">Conectar ao Google Drive</button>
-      <p style="font-size:12px;color:#8f9a86;margin-top:10px;">O ID e o e-mail ficam salvos neste navegador, e da próxima vez o app conecta automaticamente.</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:10px;">O ID e o e-mail ficam salvos neste navegador, e da próxima vez o app conecta automaticamente.</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:4px;">📱 No celular, o navegador costuma pedir para conectar toda vez por causa das configurações de privacidade — é normal, e como a conta já fica salva, é só um toque em "Conectar".</p>
     </div>
-    <footer style="margin-top:30px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
+    <footer style="margin-top:30px;text-align:center;font-size:11px;color:var(--muted);">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
   `;
 }
 
@@ -632,7 +654,7 @@ function renderApp() {
         </div>
       </div>
       <div style="text-align:right;">
-        ${state.userEmail ? `<p style="font-size:12px;color:#5f6b57;margin:0 0 6px 0;">Conectado como <strong>${esc(state.userEmail)}</strong></p>` : ''}
+        ${state.userEmail ? `<p style="font-size:12px;color:var(--muted-dark);margin:0 0 6px 0;">Conectado como <strong>${esc(state.userEmail)}</strong></p>` : ''}
         <button id="disconnectBtn" class="btn-outline" style="font-size:11px;">Trocar de conta</button>
       </div>
     </header>
@@ -641,8 +663,8 @@ function renderApp() {
       <button class="tab-btn ${state.tab==='funcionarios'?'active':''}" data-tab="funcionarios">Funcionários</button>
       <button class="tab-btn ${state.tab==='buscar'?'active':''}" data-tab="buscar">Buscar documentos</button>
     </div>
-    ${state.loading ? '<p style="color:#5f6b57;">Carregando...</p>' : state.tab === 'funcionarios' ? renderFuncionarios(docsForSelected) : renderBuscar(results)}
-    <footer style="margin-top:40px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
+    ${state.loading ? '<p style="color:var(--muted-dark);">Carregando...</p>' : state.tab === 'funcionarios' ? renderFuncionarios(docsForSelected) : renderBuscar(results)}
+    <footer style="margin-top:40px;text-align:center;font-size:11px;color:var(--muted);">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
   `;
 }
 
@@ -665,49 +687,49 @@ function renderFuncionarios(docsForSelected) {
   `).join('');
 
   const sidebar = `
-    <div style="background:#1b2430;border-radius:10px;padding:16px;height:fit-content;">
-      <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:10px;">Funcionários (${state.employees.length})</p>
+    <div style="background:var(--navy-900);border-radius:10px;padding:16px;height:fit-content;">
+      <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:10px;">Funcionários (${state.employees.length})</p>
       <div style="display:flex;gap:6px;margin-bottom:10px;">
-        <input id="empFilterInput" class="field" placeholder="Buscar por nome ou CPF" value="${esc(state.empFilter || '')}" style="background:#243040;border:1px solid #3a4757;color:#e7e4db;flex:1;" />
+        <input id="empFilterInput" class="field" placeholder="Buscar por nome ou CPF" value="${esc(state.empFilter || '')}" style="background:var(--navy-800);border:1px solid var(--navy-700);color:var(--off-white);flex:1;" />
         <button id="empSearchBtn" class="btn-primary" style="padding:8px 12px;">Buscar</button>
       </div>
       ${state.employees.length === 0
-        ? '<p style="font-size:13px;color:#8f9a86;">Nenhum funcionário cadastrado ainda.</p>'
+        ? '<p style="font-size:13px;color:var(--muted);">Nenhum funcionário cadastrado ainda.</p>'
         : (filterQ === ''
-          ? '<p style="font-size:13px;color:#8f9a86;">Digite o nome ou CPF acima para localizar um funcionário.</p>'
+          ? '<p style="font-size:13px;color:var(--muted);">Digite o nome ou CPF acima para localizar um funcionário.</p>'
           : (filteredEmployees.length === 0
-            ? '<p style="font-size:13px;color:#8f9a86;">Nenhum resultado para essa busca.</p>'
+            ? '<p style="font-size:13px;color:var(--muted);">Nenhum resultado para essa busca.</p>'
             : empList))}
-      <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
-        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Novo funcionário</p>
-        <input id="newEmpName" class="field" placeholder="Nome completo" value="${esc(state.newEmpForm.nome)}" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
-        <input id="newEmpCpf" class="field" placeholder="CPF" maxlength="14" value="${esc(state.newEmpForm.cpf)}" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
-        <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" value="${esc(state.newEmpForm.cargo)}" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+      <div style="margin-top:16px;border-top:1px solid var(--navy-700);padding-top:14px;">
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;">Novo funcionário</p>
+        <input id="newEmpName" class="field" placeholder="Nome completo" value="${esc(state.newEmpForm.nome)}" style="margin-bottom:6px;background:var(--navy-800);border:1px solid var(--navy-700);color:var(--off-white);" />
+        <input id="newEmpCpf" class="field" placeholder="CPF" maxlength="14" value="${esc(state.newEmpForm.cpf)}" style="margin-bottom:6px;background:var(--navy-800);border:1px solid var(--navy-700);color:var(--off-white);" />
+        <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" value="${esc(state.newEmpForm.cargo)}" style="margin-bottom:8px;background:var(--navy-800);border:1px solid var(--navy-700);color:var(--off-white);" />
         ${state.empFormError ? `<p style="font-size:11px;color:#f0a3a3;margin-bottom:8px;">${esc(state.empFormError)}</p>` : ''}
         <button id="addEmpBtn" class="btn-primary" style="width:100%;">+ Cadastrar</button>
       </div>
-      <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
-        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Importar em massa</p>
+      <div style="margin-top:16px;border-top:1px solid var(--navy-700);padding-top:14px;">
+        <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;">Importar em massa</p>
         <input id="importFile" type="file" accept=".csv,.xlsx,.xls" style="display:none;" />
-        <button id="importBtn" class="btn-outline" style="width:100%;border-color:#3a4757;color:#e7e4db;">Importar CSV/Excel</button>
-        <p style="font-size:10px;color:#8f9a86;margin-top:6px;">Colunas: Nome, CPF, Cargo (opcional)</p>
-        ${state.importMsg ? `<p style="font-size:11px;color:#9fd6c3;margin-top:6px;">${esc(state.importMsg)}</p>` : ''}
+        <button id="importBtn" class="btn-outline" style="width:100%;border-color:var(--navy-700);color:var(--off-white);">Importar CSV/Excel</button>
+        <p style="font-size:10px;color:var(--muted);margin-top:6px;">Colunas: Nome, CPF, Cargo (opcional)</p>
+        ${state.importMsg ? `<p style="font-size:11px;color:var(--gold-300);margin-top:6px;">${esc(state.importMsg)}</p>` : ''}
       </div>
     </div>
   `;
 
   let main;
   if (!state.selectedEmp) {
-    main = `<div class="card" style="padding:40px;text-align:center;color:#5f6b57;">Selecione um funcionário à esquerda para ver ou anexar documentos.</div>`;
+    main = `<div class="card" style="padding:40px;text-align:center;color:var(--muted-dark);">Selecione um funcionário à esquerda para ver ou anexar documentos.</div>`;
   } else {
     const f = state.docForm;
-    const docsHtml = docsForSelected.length === 0 ? '<p style="color:#5f6b57;font-size:13px;">Nenhum documento anexado ainda.</p>' :
+    const docsHtml = docsForSelected.length === 0 ? '<p style="color:var(--muted-dark);font-size:13px;">Nenhum documento anexado ainda.</p>' :
       docsForSelected.map(d => `
         <div class="doc-row">
           <div>
             <div style="font-weight:600;font-size:13px;">${esc(d.tipo)} — ${formatDate(d.data)}</div>
             <div style="font-size:13px;color:#374151;margin-top:2px;">${esc(d.motivo)}</div>
-            <div style="font-size:11px;color:#8f9a86;margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
             <button class="btn-outline" data-view-doc="${d.id}">Ver/baixar</button>
@@ -750,8 +772,8 @@ function renderFuncionarios(docsForSelected) {
         <div style="margin-bottom:12px;">
           <label class="label">Arquivos (PDF ou JPEG) *</label>
           <input id="docFile" type="file" multiple accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" class="field" />
-          <p id="fileCountText" style="font-size:11px;color:#8f9a86;margin-top:4px;">${f.files && f.files.length ? f.files.map(fl => esc(fl.name)).join(', ') : 'Você pode selecionar vários arquivos de uma vez — todos serão salvos com o mesmo tipo, motivo e data.'}</p>
-          <p style="font-size:11px;color:#8f9a86;margin-top:2px;">Limite de 400 KB por arquivo.</p>
+          <p id="fileCountText" style="font-size:11px;color:var(--muted);margin-top:4px;">${f.files && f.files.length ? f.files.map(fl => esc(fl.name)).join(', ') : 'Você pode selecionar vários arquivos de uma vez — todos serão salvos com o mesmo tipo, motivo e data.'}</p>
+          <p style="font-size:11px;color:var(--muted);margin-top:2px;">Limite de 400 KB por arquivo.</p>
         </div>
         ${f.error ? `<p style="color:#a32d2d;font-size:13px;margin-bottom:10px;">${esc(f.error)}</p>` : ''}
         <button id="saveDocBtn" class="btn-primary" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Salvando...' : 'Salvar documento'}</button>
@@ -798,7 +820,7 @@ function renderBuscar(results) {
       <div>
         <div style="font-weight:600;font-size:13px;">${esc(employeeLabel(d.employeeId))} — ${esc(d.tipo)} — ${formatDate(d.data)}</div>
         <div style="font-size:13px;color:#374151;margin-top:2px;">${esc(d.motivo)}</div>
-        <div style="font-size:11px;color:#8f9a86;margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">${esc(d.arquivoNome)} · ${d.arquivoTipo.toUpperCase()}</div>
       </div>
       <button class="btn-outline" data-view-doc="${d.id}">Ver/baixar</button>
     </div>
@@ -807,7 +829,7 @@ function renderBuscar(results) {
   const pagination = totalPages > 1 ? `
     <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:16px;">
       <button id="prevPageBtn" class="btn-outline" ${page <= 1 ? 'disabled style="opacity:0.4;"' : ''}>← Anterior</button>
-      <span style="font-size:13px;color:#5f6b57;">Página ${page} de ${totalPages}</span>
+      <span style="font-size:13px;color:var(--muted-dark);">Página ${page} de ${totalPages}</span>
       <button id="nextPageBtn" class="btn-outline" ${page >= totalPages ? 'disabled style="opacity:0.4;"' : ''}>Próxima →</button>
     </div>
   ` : '';
@@ -821,8 +843,8 @@ function renderBuscar(results) {
       <div><label class="label">Motivo contém</label><input id="sTexto" class="field" placeholder="palavra-chave" value="${esc(s.texto)}" /></div>
       <div><button id="searchDocsBtn" class="btn-primary" style="height:38px;white-space:nowrap;">Buscar</button></div>
     </div>
-    <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)${totalPages > 1 ? ' — mostrando ' + (pageSize) + ' por página' : ''}</p>
-    ${results.length === 0 ? '<div class="card" style="padding:30px;text-align:center;color:#5f6b57;">Nenhum documento encontrado para esses filtros.</div>' : resultsHtml}
+    <p style="font-size:13px;color:var(--muted-dark);margin-bottom:10px;">${results.length} documento(s) encontrado(s)${totalPages > 1 ? ' — mostrando ' + (pageSize) + ' por página' : ''}</p>
+    ${results.length === 0 ? '<div class="card" style="padding:30px;text-align:center;color:var(--muted-dark);">Nenhum documento encontrado para esses filtros.</div>' : resultsHtml}
     ${pagination}
   `;
 }
@@ -915,7 +937,7 @@ function attachAppHandlers() {
   if (nextPageBtn) nextPageBtn.onclick = () => { state.searchPage = (state.searchPage || 1) + 1; render(); };
 }
 
-if (state.clientId) {
+if (state.clientId && !isMobileDevice()) {
   state.screen = 'connecting';
 }
 render();
