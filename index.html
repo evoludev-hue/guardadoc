@@ -57,11 +57,14 @@ const state = {
   docs: [],
   tab: 'funcionarios',
   selectedEmp: null,
+  editingEmp: null,
+  editForm: null,
   error: '',
   loading: false,
   saving: false,
-  docForm: { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', file: null, error: '' },
+  docForm: { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', files: [], error: '' },
   empFormError: '',
+  newEmpForm: { nome: '', cpf: '', cargo: '' },
   search: { emp: '', tipo: '', texto: '', de: '', ate: '' }
 };
 
@@ -269,6 +272,12 @@ async function deleteAttachment(fileId) {
   } catch (e) {}
 }
 
+function cpfExists(cpf, excludeId) {
+  const digits = onlyDigits(cpf);
+  if (!digits) return false;
+  return state.employees.some(e => e.id !== excludeId && onlyDigits(e.cpf) === digits);
+}
+
 async function addEmployee(nome, cpf, cargo) {
   nome = nome.trim();
   cpf = (cpf || '').trim();
@@ -279,11 +288,59 @@ async function addEmployee(nome, cpf, cargo) {
     render();
     return;
   }
+  if (cpf && cpfExists(cpf, null)) {
+    state.empFormError = 'Já existe um funcionário cadastrado com esse CPF.';
+    render();
+    return;
+  }
   const cpfFormatted = cpf ? formatCpf(cpf) : '';
   const emp = { id: uid('emp'), nome, cpf: cpfFormatted, cargo: cargo.trim() };
   state.employees.push(emp);
   state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  try { await saveData(); state.selectedEmp = emp.id; } catch (e) { setError('Não foi possível cadastrar o funcionário.'); }
+  try {
+    await saveData();
+    state.selectedEmp = emp.id;
+    state.newEmpForm = { nome: '', cpf: '', cargo: '' };
+  } catch (e) { setError('Não foi possível cadastrar o funcionário.'); }
+  render();
+}
+
+function startEditEmployee(id) {
+  const e = state.employees.find(e => e.id === id);
+  if (!e) return;
+  state.editingEmp = id;
+  state.editForm = { nome: e.nome, cpf: e.cpf || '', cargo: e.cargo || '', error: '' };
+  render();
+}
+
+function cancelEditEmployee() {
+  state.editingEmp = null;
+  state.editForm = null;
+  render();
+}
+
+async function saveEditEmployee() {
+  const ef = state.editForm;
+  const nome = (ef.nome || '').trim();
+  const cpf = (ef.cpf || '').trim();
+  const cargo = (ef.cargo || '').trim();
+  ef.error = '';
+  if (!nome) { ef.error = 'Informe o nome.'; render(); return; }
+  if (cpf && !isValidCpf(cpf)) { ef.error = 'CPF inválido. Confira os números digitados.'; render(); return; }
+  if (cpf && cpfExists(cpf, state.editingEmp)) { ef.error = 'Já existe outro funcionário cadastrado com esse CPF.'; render(); return; }
+  const emp = state.employees.find(e => e.id === state.editingEmp);
+  if (!emp) { cancelEditEmployee(); return; }
+  emp.nome = nome;
+  emp.cpf = cpf ? formatCpf(cpf) : '';
+  emp.cargo = cargo;
+  state.employees.sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  try {
+    await saveData();
+    state.editingEmp = null;
+    state.editForm = null;
+  } catch (e) {
+    ef.error = 'Não foi possível salvar as alterações.';
+  }
   render();
 }
 
@@ -370,7 +427,7 @@ async function importEmployeesFile(file) {
   render();
 }
 
-function resetDocForm() { state.docForm = { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', file: null, error: '' }; }
+function resetDocForm() { state.docForm = { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', files: [], error: '' }; }
 
 async function handleAddDocument(employeeId) {
   const f = state.docForm;
@@ -379,27 +436,33 @@ async function handleAddDocument(employeeId) {
   if (!tipoFinal) { f.error = 'Informe o tipo do documento.'; render(); return; }
   if (!f.motivo.trim()) { f.error = 'O motivo é obrigatório.'; render(); return; }
   if (!f.data) { f.error = 'A data é obrigatória.'; render(); return; }
-  if (!f.file) { f.error = 'Anexe um arquivo PDF ou JPEG.'; render(); return; }
-  const isPdf = f.file.type === 'application/pdf';
-  const isJpeg = f.file.type === 'image/jpeg' || f.file.type === 'image/jpg';
-  if (!isPdf && !isJpeg) { f.error = 'Só é permitido anexar arquivos PDF ou JPEG.'; render(); return; }
+  if (!f.files || f.files.length === 0) { f.error = 'Anexe ao menos um arquivo PDF ou JPEG.'; render(); return; }
+  for (const file of f.files) {
+    const isPdf = file.type === 'application/pdf';
+    const isJpeg = file.type === 'image/jpeg' || file.type === 'image/jpg';
+    if (!isPdf && !isJpeg) { f.error = 'Só é permitido anexar arquivos PDF ou JPEG ("' + file.name + '" não é válido).'; render(); return; }
+  }
 
   state.saving = true; render();
   try {
-    const docId = uid('doc');
     const employee = state.employees.find(e => e.id === employeeId);
-    const uploaded = await uploadAttachment(f.file, docId, employee);
-    const entry = {
-      id: docId, employeeId, tipo: tipoFinal, motivo: f.motivo.trim(), data: f.data,
-      arquivoNome: f.file.name, arquivoTipo: isPdf ? 'pdf' : 'jpeg',
-      driveFileId: uploaded.id, webViewLink: uploaded.webViewLink,
-      criadoEm: new Date().toISOString()
-    };
-    state.docs.unshift(entry);
+    const newEntries = [];
+    for (const file of f.files) {
+      const docId = uid('doc');
+      const isPdf = file.type === 'application/pdf';
+      const uploaded = await uploadAttachment(file, docId, employee);
+      newEntries.push({
+        id: docId, employeeId, tipo: tipoFinal, motivo: f.motivo.trim(), data: f.data,
+        arquivoNome: file.name, arquivoTipo: isPdf ? 'pdf' : 'jpeg',
+        driveFileId: uploaded.id, webViewLink: uploaded.webViewLink,
+        criadoEm: new Date().toISOString()
+      });
+    }
+    state.docs = [...newEntries.reverse(), ...state.docs];
     await saveData();
     resetDocForm();
   } catch (e) {
-    f.error = 'Não foi possível salvar o documento. Tente novamente.';
+    f.error = 'Não foi possível salvar um ou mais documentos. Tente novamente.';
   }
   state.saving = false;
   render();
@@ -545,9 +608,9 @@ function renderFuncionarios(docsForSelected) {
             : empList))}
       <div style="margin-top:16px;border-top:1px solid #33404f;padding-top:14px;">
         <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8f9a86;margin-bottom:8px;">Novo funcionário</p>
-        <input id="newEmpName" class="field" placeholder="Nome completo" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
-        <input id="newEmpCpf" class="field" placeholder="CPF" maxlength="14" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
-        <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpName" class="field" placeholder="Nome completo" value="${esc(state.newEmpForm.nome)}" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpCpf" class="field" placeholder="CPF" maxlength="14" value="${esc(state.newEmpForm.cpf)}" style="margin-bottom:6px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
+        <input id="newEmpCargo" class="field" placeholder="Cargo (opcional)" value="${esc(state.newEmpForm.cargo)}" style="margin-bottom:8px;background:#243040;border:1px solid #3a4757;color:#e7e4db;" />
         ${state.empFormError ? `<p style="font-size:11px;color:#f0a3a3;margin-bottom:8px;">${esc(state.empFormError)}</p>` : ''}
         <button id="addEmpBtn" class="btn-primary" style="width:100%;">+ Cadastrar</button>
       </div>
@@ -582,10 +645,14 @@ function renderFuncionarios(docsForSelected) {
       `).join('');
 
     main = `
+      ${state.editingEmp === state.selectedEmp ? renderEditEmployeeForm() : `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <h2 style="font-size:19px;font-weight:600;margin:0;">${esc(employeeName(state.selectedEmp))}</h2>
-        ${canDelete() ? `<button class="btn-danger" data-delete-emp="${state.selectedEmp}">Remover funcionário</button>` : ''}
-      </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-outline" data-edit-emp="${state.selectedEmp}">Editar</button>
+          ${canDelete() ? `<button class="btn-danger" data-delete-emp="${state.selectedEmp}">Remover funcionário</button>` : ''}
+        </div>
+      </div>`}
       <div class="card" style="margin-bottom:20px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <h3 style="font-size:14px;font-weight:600;margin:0;">Anexar novo documento</h3>
@@ -609,8 +676,9 @@ function renderFuncionarios(docsForSelected) {
           <textarea id="docMotivo" class="field" rows="3" placeholder="Ex: consulta médica, repouso de 3 dias, comparecimento ao INSS...">${esc(f.motivo)}</textarea>
         </div>
         <div style="margin-bottom:12px;">
-          <label class="label">Arquivo (PDF ou JPEG) *</label>
-          <input id="docFile" type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" class="field" />
+          <label class="label">Arquivos (PDF ou JPEG) *</label>
+          <input id="docFile" type="file" multiple accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" class="field" />
+          <p style="font-size:11px;color:#8f9a86;margin-top:4px;">${f.files && f.files.length ? f.files.length + ' arquivo(s) selecionado(s)' : 'Você pode selecionar vários arquivos de uma vez — todos serão salvos com o mesmo tipo, motivo e data.'}</p>
         </div>
         ${f.error ? `<p style="color:#a32d2d;font-size:13px;margin-bottom:10px;">${esc(f.error)}</p>` : ''}
         <button id="saveDocBtn" class="btn-primary" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Salvando...' : 'Salvar documento'}</button>
@@ -621,6 +689,26 @@ function renderFuncionarios(docsForSelected) {
   }
 
   return `<div style="display:grid;grid-template-columns:260px 1fr;gap:20px;">${sidebar}<div>${main}</div></div>`;
+}
+
+function renderEditEmployeeForm() {
+  const ef = state.editForm;
+  return `
+    <div class="card" style="margin-bottom:14px;">
+      <h3 style="font-size:14px;font-weight:600;margin:0 0 10px 0;">Editar funcionário</h3>
+      <label class="label">Nome completo</label>
+      <input id="editEmpName" class="field" value="${esc(ef.nome)}" style="margin-bottom:8px;" />
+      <label class="label">CPF</label>
+      <input id="editEmpCpf" class="field" value="${esc(ef.cpf)}" maxlength="14" style="margin-bottom:8px;" />
+      <label class="label">Cargo</label>
+      <input id="editEmpCargo" class="field" value="${esc(ef.cargo)}" style="margin-bottom:8px;" />
+      ${ef.error ? `<p style="font-size:12px;color:#a32d2d;margin-bottom:8px;">${esc(ef.error)}</p>` : ''}
+      <div style="display:flex;gap:8px;">
+        <button id="saveEditEmpBtn" class="btn-primary">Salvar alterações</button>
+        <button id="cancelEditEmpBtn" class="btn-outline">Cancelar</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderBuscar(results) {
@@ -639,12 +727,13 @@ function renderBuscar(results) {
   `).join('');
 
   return `
-    <div class="card" style="margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:10px;">
+    <div class="card" style="margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;">
       <div><label class="label">Funcionário</label><select id="sEmp" class="field"><option value="">Todos</option>${empOptions}</select></div>
       <div><label class="label">Tipo</label><select id="sTipo" class="field"><option value="">Todos</option>${tipoOptions}</select></div>
       <div><label class="label">De</label><input id="sDe" type="date" class="field" value="${s.de}" /></div>
       <div><label class="label">Até</label><input id="sAte" type="date" class="field" value="${s.ate}" /></div>
       <div><label class="label">Motivo contém</label><input id="sTexto" class="field" placeholder="palavra-chave" value="${esc(s.texto)}" /></div>
+      <div><button id="searchDocsBtn" class="btn-primary" style="height:38px;white-space:nowrap;">Buscar</button></div>
     </div>
     <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)</p>
     ${resultsHtml}
@@ -656,9 +745,13 @@ function attachAppHandlers() {
   const disconnectBtn = document.getElementById('disconnectBtn');
   if (disconnectBtn) disconnectBtn.onclick = disconnect;
   const addEmpBtn = document.getElementById('addEmpBtn');
-  if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(document.getElementById('newEmpName').value, document.getElementById('newEmpCpf').value, document.getElementById('newEmpCargo').value);
+  if (addEmpBtn) addEmpBtn.onclick = () => addEmployee(state.newEmpForm.nome, state.newEmpForm.cpf, state.newEmpForm.cargo);
+  const newEmpName = document.getElementById('newEmpName');
+  if (newEmpName) newEmpName.oninput = () => { state.newEmpForm.nome = newEmpName.value; };
   const newEmpCpf = document.getElementById('newEmpCpf');
-  if (newEmpCpf) newEmpCpf.oninput = () => { newEmpCpf.value = formatCpf(newEmpCpf.value); };
+  if (newEmpCpf) newEmpCpf.oninput = () => { newEmpCpf.value = formatCpf(newEmpCpf.value); state.newEmpForm.cpf = newEmpCpf.value; };
+  const newEmpCargo = document.getElementById('newEmpCargo');
+  if (newEmpCargo) newEmpCargo.oninput = () => { state.newEmpForm.cargo = newEmpCargo.value; };
   const empFilterInput = document.getElementById('empFilterInput');
   const empSearchBtn = document.getElementById('empSearchBtn');
   if (empFilterInput && empSearchBtn) {
@@ -672,10 +765,22 @@ function attachAppHandlers() {
     importBtn.onclick = () => importFile.click();
     importFile.onchange = () => { if (importFile.files[0]) importEmployeesFile(importFile.files[0]); };
   }
-  document.querySelectorAll('[data-select-emp]').forEach(el => el.onclick = () => { state.selectedEmp = el.dataset.selectEmp; resetDocForm(); render(); });
+  document.querySelectorAll('[data-select-emp]').forEach(el => el.onclick = () => { state.selectedEmp = el.dataset.selectEmp; state.editingEmp = null; resetDocForm(); render(); });
   document.querySelectorAll('[data-delete-emp]').forEach(el => el.onclick = () => deleteEmployee(el.dataset.deleteEmp));
+  document.querySelectorAll('[data-edit-emp]').forEach(el => el.onclick = () => startEditEmployee(el.dataset.editEmp));
   document.querySelectorAll('[data-delete-doc]').forEach(el => el.onclick = () => deleteDocument(el.dataset.deleteDoc));
   document.querySelectorAll('[data-view-doc]').forEach(el => el.onclick = () => viewDocument(state.docs.find(d => d.id === el.dataset.viewDoc)));
+
+  const editEmpName = document.getElementById('editEmpName');
+  if (editEmpName) editEmpName.oninput = () => { state.editForm.nome = editEmpName.value; };
+  const editEmpCpf = document.getElementById('editEmpCpf');
+  if (editEmpCpf) editEmpCpf.oninput = () => { editEmpCpf.value = formatCpf(editEmpCpf.value); state.editForm.cpf = editEmpCpf.value; };
+  const editEmpCargo = document.getElementById('editEmpCargo');
+  if (editEmpCargo) editEmpCargo.oninput = () => { state.editForm.cargo = editEmpCargo.value; };
+  const saveEditEmpBtn = document.getElementById('saveEditEmpBtn');
+  if (saveEditEmpBtn) saveEditEmpBtn.onclick = saveEditEmployee;
+  const cancelEditEmpBtn = document.getElementById('cancelEditEmpBtn');
+  if (cancelEditEmpBtn) cancelEditEmpBtn.onclick = cancelEditEmployee;
 
   const docTipo = document.getElementById('docTipo');
   if (docTipo) docTipo.onchange = () => { state.docForm.tipo = docTipo.value; render(); };
@@ -686,20 +791,28 @@ function attachAppHandlers() {
   const docData = document.getElementById('docData');
   if (docData) docData.oninput = () => { state.docForm.data = docData.value; };
   const docFile = document.getElementById('docFile');
-  if (docFile) docFile.onchange = () => { state.docForm.file = docFile.files[0] || null; };
+  if (docFile) docFile.onchange = () => { state.docForm.files = Array.from(docFile.files || []); render(); };
   const saveDocBtn = document.getElementById('saveDocBtn');
   if (saveDocBtn) saveDocBtn.onclick = () => handleAddDocument(state.selectedEmp);
 
   const sEmp = document.getElementById('sEmp');
-  if (sEmp) sEmp.onchange = () => { state.search.emp = sEmp.value; render(); };
   const sTipo = document.getElementById('sTipo');
-  if (sTipo) sTipo.onchange = () => { state.search.tipo = sTipo.value; render(); };
   const sDe = document.getElementById('sDe');
-  if (sDe) sDe.onchange = () => { state.search.de = sDe.value; render(); };
   const sAte = document.getElementById('sAte');
-  if (sAte) sAte.onchange = () => { state.search.ate = sAte.value; render(); };
   const sTexto = document.getElementById('sTexto');
-  if (sTexto) sTexto.oninput = () => { state.search.texto = sTexto.value; render(); };
+  const searchDocsBtn = document.getElementById('searchDocsBtn');
+  const doDocSearch = () => {
+    state.search = {
+      emp: sEmp ? sEmp.value : '',
+      tipo: sTipo ? sTipo.value : '',
+      texto: sTexto ? sTexto.value : '',
+      de: sDe ? sDe.value : '',
+      ate: sAte ? sAte.value : ''
+    };
+    render();
+  };
+  if (searchDocsBtn) searchDocsBtn.onclick = doDocSearch;
+  if (sTexto) sTexto.onkeydown = (ev) => { if (ev.key === 'Enter') doDocSearch(); };
 }
 
 if (state.clientId) {
