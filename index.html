@@ -44,7 +44,7 @@
 <div id="app" class="wrap"></div>
 
 <script>
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
 const TIPOS = ["Atestado médico", "Declaração de comparecimento", "Declaração escolar", "Outro"];
@@ -491,6 +491,7 @@ async function handleAddDocument(employeeId) {
     const isPdf = file.type === 'application/pdf';
     const isJpeg = file.type === 'image/jpeg' || file.type === 'image/jpg';
     if (!isPdf && !isJpeg) { f.error = 'Só é permitido anexar arquivos PDF ou JPEG ("' + file.name + '" não é válido).'; render(); return; }
+    if (file.size > 400 * 1024) { f.error = 'O arquivo "' + file.name + '" tem ' + Math.round(file.size/1024) + ' KB. O limite é de 400 KB por arquivo.'; render(); return; }
   }
 
   state.saving = true; render();
@@ -547,7 +548,7 @@ function employeeLabel(id) {
 function render() {
   const app = document.getElementById('app');
   if (state.screen === 'connecting') {
-    app.innerHTML = `<header style="margin-bottom:24px;"><div style="display:flex;align-items:center;gap:10px;"><img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" /><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></div></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
+    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
     setTimeout(() => {
       const btn = document.getElementById('skipConnectingBtn');
       if (btn) btn.onclick = () => { state.screen = 'config'; render(); };
@@ -563,8 +564,7 @@ function renderConfig() {
   return `
     <header style="margin-bottom:24px;">
       <div style="display:flex;align-items:center;gap:10px;">
-        <img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" />
-        <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+        <h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1>
       </div>
       <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
     </header>
@@ -613,8 +613,7 @@ function renderApp() {
     <header style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start;">
       <div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" />
-          <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+          <h1 style="font-size:26px;font-weight:700;margin:0;cursor:pointer;" onclick="location.reload()">RH Digital</h1>
         </div>
       </div>
       <div style="text-align:right;">
@@ -737,6 +736,7 @@ function renderFuncionarios(docsForSelected) {
           <label class="label">Arquivos (PDF ou JPEG) *</label>
           <input id="docFile" type="file" multiple accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" class="field" />
           <p id="fileCountText" style="font-size:11px;color:#8f9a86;margin-top:4px;">${f.files && f.files.length ? f.files.map(fl => esc(fl.name)).join(', ') : 'Você pode selecionar vários arquivos de uma vez — todos serão salvos com o mesmo tipo, motivo e data.'}</p>
+          <p style="font-size:11px;color:#8f9a86;margin-top:2px;">Limite de 400 KB por arquivo.</p>
         </div>
         ${f.error ? `<p style="color:#a32d2d;font-size:13px;margin-bottom:10px;">${esc(f.error)}</p>` : ''}
         <button id="saveDocBtn" class="btn-primary" ${state.saving ? 'disabled' : ''}>${state.saving ? 'Salvando...' : 'Salvar documento'}</button>
@@ -807,7 +807,7 @@ function renderBuscar(results) {
       <div><button id="searchDocsBtn" class="btn-primary" style="height:38px;white-space:nowrap;">Buscar</button></div>
     </div>
     <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)${totalPages > 1 ? ' — mostrando ' + (pageSize) + ' por página' : ''}</p>
-    ${resultsHtml}
+    ${results.length === 0 ? '<div class="card" style="padding:30px;text-align:center;color:#5f6b57;">Nenhum documento encontrado para esses filtros.</div>' : resultsHtml}
     ${pagination}
   `;
 }
