@@ -1,6 +1,6 @@
 <!--
   RH Digital
-  Criado e desenvolvido por Denis
+  Criado e desenvolvido por Denis Miranda By São Jorge
   Versão 1.0
 -->
 <!DOCTYPE html>
@@ -44,7 +44,7 @@
 <div id="app" class="wrap"></div>
 
 <script>
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const USERINFO_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
 const TIPOS = ["Atestado médico", "Declaração de comparecimento", "Declaração escolar", "Outro"];
@@ -73,7 +73,8 @@ const state = {
   docForm: { tipo: TIPOS[0], tipoOutro: '', motivo: '', data: '', files: [], error: '' },
   empFormError: '',
   newEmpForm: { nome: '', cpf: '', cargo: '' },
-  search: { emp: '', tipo: '', texto: '', de: '', ate: '' }
+  search: { emp: '', tipo: '', texto: '', de: '', ate: '' },
+  searchPage: 1,
 };
 
 function uid(prefix) { return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
@@ -546,7 +547,7 @@ function employeeLabel(id) {
 function render() {
   const app = document.getElementById('app');
   if (state.screen === 'connecting') {
-    app.innerHTML = `<header style="margin-bottom:24px;"><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
+    app.innerHTML = `<header style="margin-bottom:24px;"><div style="display:flex;align-items:center;gap:10px;"><img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" /><h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1></div></header><p style="color:#5f6b57;margin-bottom:10px;">Reconectando ao Google Drive...</p><button id="skipConnectingBtn" class="btn-outline">Conectar manualmente</button>`;
     setTimeout(() => {
       const btn = document.getElementById('skipConnectingBtn');
       if (btn) btn.onclick = () => { state.screen = 'config'; render(); };
@@ -561,7 +562,10 @@ function render() {
 function renderConfig() {
   return `
     <header style="margin-bottom:24px;">
-      <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" />
+        <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+      </div>
       <p style="color:#5f6b57;font-size:14px;margin-top:4px;">Conecte ao Google Drive para começar.</p>
     </header>
     ${state.error ? `<div class="error-box">${esc(state.error)}</div>` : ''}
@@ -574,7 +578,7 @@ function renderConfig() {
       <button id="connectBtn" class="btn-primary" style="width:100%;">Conectar ao Google Drive</button>
       <p style="font-size:12px;color:#8f9a86;margin-top:10px;">O ID e o e-mail ficam salvos neste navegador, e da próxima vez o app conecta automaticamente.</p>
     </div>
-    <footer style="margin-top:30px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis</footer>
+    <footer style="margin-top:30px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
   `;
 }
 
@@ -608,7 +612,10 @@ function renderApp() {
   return `
     <header style="margin-bottom:24px;display:flex;justify-content:space-between;align-items:flex-start;">
       <div>
-        <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="https://drive.google.com/uc?export=view&id=1ljrXxdMVHg8eeeZ3uLFItg8MffqZkjph" alt="Logo" style="height:36px;width:auto;" onerror="this.style.display='none'" />
+          <h1 style="font-size:26px;font-weight:700;margin:0;">RH Digital</h1>
+        </div>
       </div>
       <div style="text-align:right;">
         ${state.userEmail ? `<p style="font-size:12px;color:#5f6b57;margin:0 0 6px 0;">Conectado como <strong>${esc(state.userEmail)}</strong></p>` : ''}
@@ -621,7 +628,7 @@ function renderApp() {
       <button class="tab-btn ${state.tab==='buscar'?'active':''}" data-tab="buscar">Buscar documentos</button>
     </div>
     ${state.loading ? '<p style="color:#5f6b57;">Carregando...</p>' : state.tab === 'funcionarios' ? renderFuncionarios(docsForSelected) : renderBuscar(results)}
-    <footer style="margin-top:40px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis</footer>
+    <footer style="margin-top:40px;text-align:center;font-size:11px;color:#8f9a86;">RH Digital v${APP_VERSION} — Criado e desenvolvido por Denis Miranda By São Jorge</footer>
   `;
 }
 
@@ -764,9 +771,14 @@ function renderEditEmployeeForm() {
 
 function renderBuscar(results) {
   const s = state.search;
+  const pageSize = 50;
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const page = Math.min(Math.max(1, state.searchPage || 1), totalPages);
+  const pageResults = results.slice((page - 1) * pageSize, page * pageSize);
+
   const empOptions = state.employees.map(e => `<option value="${e.id}" ${s.emp===e.id?'selected':''}>${esc(e.cpf ? e.nome + ' — ' + e.cpf : e.nome)}</option>`).join('');
   const tipoOptions = TIPOS.map(t => `<option value="${t}" ${s.tipo===t?'selected':''}>${t}</option>`).join('');
-  const resultsHtml = results.map(d => `
+  const resultsHtml = pageResults.map(d => `
     <div class="doc-row">
       <div>
         <div style="font-weight:600;font-size:13px;">${esc(employeeLabel(d.employeeId))} — ${esc(d.tipo)} — ${formatDate(d.data)}</div>
@@ -777,6 +789,14 @@ function renderBuscar(results) {
     </div>
   `).join('');
 
+  const pagination = totalPages > 1 ? `
+    <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:16px;">
+      <button id="prevPageBtn" class="btn-outline" ${page <= 1 ? 'disabled style="opacity:0.4;"' : ''}>← Anterior</button>
+      <span style="font-size:13px;color:#5f6b57;">Página ${page} de ${totalPages}</span>
+      <button id="nextPageBtn" class="btn-outline" ${page >= totalPages ? 'disabled style="opacity:0.4;"' : ''}>Próxima →</button>
+    </div>
+  ` : '';
+
   return `
     <div class="card" style="margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:10px;align-items:end;">
       <div><label class="label">Funcionário</label><select id="sEmp" class="field"><option value="">Todos</option>${empOptions}</select></div>
@@ -786,8 +806,9 @@ function renderBuscar(results) {
       <div><label class="label">Motivo contém</label><input id="sTexto" class="field" placeholder="palavra-chave" value="${esc(s.texto)}" /></div>
       <div><button id="searchDocsBtn" class="btn-primary" style="height:38px;white-space:nowrap;">Buscar</button></div>
     </div>
-    <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)</p>
+    <p style="font-size:13px;color:#5f6b57;margin-bottom:10px;">${results.length} documento(s) encontrado(s)${totalPages > 1 ? ' — mostrando ' + (pageSize) + ' por página' : ''}</p>
     ${resultsHtml}
+    ${pagination}
   `;
 }
 
@@ -868,10 +889,15 @@ function attachAppHandlers() {
       de: sDe ? sDe.value : '',
       ate: sAte ? sAte.value : ''
     };
+    state.searchPage = 1;
     render();
   };
   if (searchDocsBtn) searchDocsBtn.onclick = doDocSearch;
   if (sTexto) sTexto.onkeydown = (ev) => { if (ev.key === 'Enter') doDocSearch(); };
+  const prevPageBtn = document.getElementById('prevPageBtn');
+  if (prevPageBtn) prevPageBtn.onclick = () => { state.searchPage = Math.max(1, (state.searchPage || 1) - 1); render(); };
+  const nextPageBtn = document.getElementById('nextPageBtn');
+  if (nextPageBtn) nextPageBtn.onclick = () => { state.searchPage = (state.searchPage || 1) + 1; render(); };
 }
 
 if (state.clientId) {
